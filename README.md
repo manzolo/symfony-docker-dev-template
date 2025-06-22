@@ -32,26 +32,21 @@ Before you begin, ensure you have the following installed on your machine:
     ```bash
     git clone https://github.com/manzolo/symfony-docker-dev-template.git
     cd symfony-docker-dev-template
+    mkdir -p var/cache var/log
+    make build # Build the Docker images (if not already built)
+    make start # Start all services in the background
     ```
 
-2.  **Enjoy your Symfony project:**
-    You can use the `symfony-workspace` container to manage your Symfony project:
+    Enter the symfony-workspace container and install your project's Composer dependencies:
     ```bash
-    make start # Start the services
-    make enter # Enter the workspace container
+    make enter # Access the workspace container's bash shell
+    composer install # Install PHP dependencies
+    exit # Exit the container
+    make restart
     ```
-    *Alternatively, copy your existing Symfony project files into this directory.*
-
-3.  **Configure Environment Variables:**
     Check your `.env` and `.env.dev` respectively. Update the variables as needed, especially for your database connection (`.env`).
 
-4.  **Build and Start Docker Containers:**
-    ```bash
-    make start
-    ```
-    This will build the custom PHP-FPM and Workspace images and then start all defined services in the background.
-
-5.  **Access Your Application:**
+2.  **Access Your Application:**
     Your Symfony application should now be accessible at `http://localhost:8080`.
 
 ---
