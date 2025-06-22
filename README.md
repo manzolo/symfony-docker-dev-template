@@ -54,16 +54,6 @@ Before you begin, ensure you have the following installed on your machine:
 5.  **Access Your Application:**
     Your Symfony application should now be accessible at `http://localhost:8080`.
 
-6.  **Run Symfony Migrations & Other Deploy Steps:**
-    After starting the services and copying your Symfony project, you'll likely need to install dependencies and run database migrations.
-    ```bash
-    make deploy
-    # If you have Doctrine Migrations, you'll want to run them:
-    make enter
-    php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
-    exit
-    ```
-
 ---
 
 ## Makefile Commands
