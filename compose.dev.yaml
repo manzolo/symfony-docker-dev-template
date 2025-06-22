@@ -1,0 +1,163 @@
+services:
+  symfony-web:
+    image: nginx:latest # Using the default Nginx image with custom configuration.
+    container_name: symfony-web
+    volumes:
+      # Mount the application code for live updates
+      - ./:/var/www
+      # Mount the Nginx configuration file
+      - ./docker/development/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${SYMFONY_NGINX_PORT:-8080}:80"
+    environment:
+      - NGINX_HOST=localhost
+    networks:
+      - symfony-development
+    depends_on:
+      symfony-php-fpm:
+        condition: service_started  # Wait for php-fpm to start
+
+  symfony-php-fpm:
+    # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
+    container_name: symfony-php-fpm
+    build:
+      context: .
+      dockerfile: ./docker/common/php-fpm/Dockerfile
+      target: development
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
+        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
+        XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
+        XDEBUG_LOG: /dev/stdout
+        XDEBUG_LOG_LEVEL: 0
+    env_file:
+      # Load the environment variables from the symfony application
+      - .env
+      - .env.dev
+    user: "${UID:-1000}:${GID:-1000}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Mount the application code for live updates
+      - ./:/var/www
+    networks:
+      - symfony-development
+    depends_on:
+      symfony-mysql:
+        condition: service_started  # Wait for postgres to start
+
+  symfony-workspace:
+   # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
+    container_name: symfony-workspace
+    build:
+      context: .
+      dockerfile: ./docker/development/workspace/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
+        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
+        XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
+        XDEBUG_LOG: /dev/stdout
+        XDEBUG_LOG_LEVEL: 0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - '${VITE_PORT:-5173}:5173'
+    tty: true  # Enables an interactive terminal
+    stdin_open: true  # Keeps standard input open for 'docker exec'
+    env_file:
+      - .env
+      - .env.dev
+    volumes:
+      - ./:/var/www
+    networks:
+      - symfony-development
+
+  symfony-mysql:
+    image: mysql:8.0
+    container_name: symfony-mysql
+    ports:
+      - "${DB_PORT:-3306}:3306" # Mappatura della porta locale alla porta del container
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-app}
+      MYSQL_USER: ${DB_USERNAME:-symfony}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: secret_root_password
+    volumes:
+      - mysql-data-development:/var/lib/mysql
+    networks:
+      - symfony-development
+    healthcheck: # Health check per MySQL
+      test: ["CMD", "mysqladmin", "ping", "-h", "symfony-mysql"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  symfony-redis:
+    image: redis:alpine
+    container_name: symfony-redis
+    networks:
+      - symfony-development
+
+  symfony-phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: symfony-phpmyadmin-dev
+    restart: unless-stopped
+    ports:
+      - "${PHPMYADMIN_PORT:-8088}:80"
+    env_file:
+      - .env
+    environment:
+      # L'hostname è il nome del servizio MySQL in Docker Compose
+      PMA_HOST: ${DB_HOST:-symfony}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-secret}
+      PMA_USER: ${DB_USERNAME:-symfony} # Puoi specificare un utente, altrimenti usa il login standard
+      PMA_PASSWORD: ${DB_PASSWORD:-secret}
+      PMA_PORT: 3306 # Porta predefinita di MySQL
+      #PMA_ARBITRARY: 1 # Consente di connettersi ad altri host (utile per debug o connessioni multiple)
+      #PMA_ABSOLUTE_URI: /phpmyadmin/
+
+    networks:
+      - symfony-development
+    depends_on:
+      symfony-mysql:
+        condition: service_healthy
+
+  symfony-db-backup:
+    image: mysql:8.0
+    container_name: db-backup-runner
+    env_file:
+      - .env
+    volumes:
+      - ./var:/backups
+    networks:
+      - symfony-development # Deve essere sulla stessa rete del database
+    # entrypoint: /bin/bash -c # Usa bash per eseguire comandi complessi
+    # Questo servizio non ha 'restart: unless-stopped' perché è inteso per essere eseguito manualmente.
+    # Esempio di comando per il backup:
+    # docker compose run --remove-orphans -it symfony-db-backup bash -c 'mysqldump -h${DB_HOST} -uroot -p${DB_ROOT_PASSWORD} ${DB_DATABASE} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql'
+    # docker compose run --remove-orphans -it symfony-db-backup bash -c 'mysql -h${DB_HOST} -uroot -p${DB_ROOT_PASSWORD} ${DB_DATABASE} < /backups/backup_YOUR_TIMESTAMP.sql'
+    depends_on:
+      symfony-mysql:
+        condition: service_healthy
+  
+  # Servizio MailHog
+  symfony-mailhog:
+    image: mailhog/mailhog:latest
+    container_name: symfony-mailhog
+    ports:
+      - "${MAILHOG_WEB_PORT:-8025}:8025" # Porta dell'interfaccia web di MailHog
+      - "${MAILHOG_SMTP_PORT:-1025}:1025" # Porta SMTP per la ricezione delle email
+    networks:
+      - symfony-development
+
+networks:
+  symfony-development:
+
+volumes:
+  mysql-data-development:
